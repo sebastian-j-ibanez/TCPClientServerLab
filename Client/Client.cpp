@@ -9,7 +9,6 @@
 #include <iostream>
 #include <fstream>
 
-#define FILENAME "Rx.txt"
 
 using namespace std;
 
@@ -19,105 +18,91 @@ int main()
 	char QUIT = '\x04';
 	char BYE = '\x1b';
 
-	//Start Winsock DLLs		
+	//starts Winsock DLLs
 	WSADATA wsaData;
-	if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0)
+	if ((WSAStartup(MAKEWORD(2, 2), &wsaData)) != 0)
+	{
 		return 0;
+	}
 
-	//Create server socket
-	SOCKET ServerSocket;
-	ServerSocket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-	if (ServerSocket == INVALID_SOCKET)
+	//initializes socket. SOCK_STREAM: TCP
+	SOCKET ClientSocket;
+	ClientSocket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+	if (ClientSocket == INVALID_SOCKET)
 	{
 		WSACleanup();
 		return 0;
 	}
 
-	//Bind socket to address
+	//Connect socket to specified server
 	sockaddr_in SvrAddr;
-	SvrAddr.sin_family = AF_INET;
-	SvrAddr.sin_addr.s_addr = INADDR_ANY;
-	SvrAddr.sin_port = htons(27000);
-	if (bind(ServerSocket, (struct sockaddr*)&SvrAddr, sizeof(SvrAddr)) == SOCKET_ERROR)
+	SvrAddr.sin_family = AF_INET;						//Address family type itnernet
+	SvrAddr.sin_port = htons(27000);					//port (host to network conversion)
+	SvrAddr.sin_addr.s_addr = inet_addr("127.0.0.1");	//IP address
+	if ((connect(ClientSocket, (struct sockaddr*)&SvrAddr, sizeof(SvrAddr))) == SOCKET_ERROR)
 	{
-		closesocket(ServerSocket);
+		closesocket(ClientSocket);
 		WSACleanup();
 		return 0;
 	}
 
-	//Listen on a socket
-	if (listen(ServerSocket, 1) == SOCKET_ERROR)
+	//Send txt file to server char by char
+	char fileBuffer;
+	char* TxBuffer = new char;
+	char RxBuffer[128] = {};
+	char InputBuffer[128] = {};
+
+	bool continueLoop = true;
+	while (continueLoop == true)
 	{
-		closesocket(ServerSocket);
-		WSACleanup();
-		return 0;
-	}
-	cout << "Waiting for client connection\n" << endl;
+		memset(InputBuffer, NULL, sizeof(InputBuffer));
 
-	//Accept a connection from a client in a loop
-	SOCKET ConnectionSocket;
+		cout << "Enter the name of a text file to transmit" << endl;
+		cin >> InputBuffer;
 
-	char* RxBuffer = new char;
-	char TxBuffer[] = { "Received Message" };
-
-	bool connectionLoop = true;
-	while (connectionLoop == true)
-	{
-
-		ConnectionSocket = SOCKET_ERROR;
-		if ((ConnectionSocket = accept(ServerSocket, NULL, NULL)) == SOCKET_ERROR)
+		if (strcmp(InputBuffer, "quit") == 0)
 		{
-			closesocket(ServerSocket);
-			WSACleanup();
-			return 0;
+			TxBuffer = &QUIT;
+			continueLoop = false;
 		}
-		cout << "Connection Established" << endl;
-
-		bool recvLoop = true;
-		while (recvLoop == true)
+		else if (strcmp(InputBuffer, "bye") == 0)
 		{
-			recv(ConnectionSocket, RxBuffer, sizeof(RxBuffer), 0);
-			send(ConnectionSocket, TxBuffer, sizeof(TxBuffer), 0);
-
-			char fileBuffer = *RxBuffer;
-
-			if (fileBuffer == QUIT)
-			{
-				cout << "Quitting..." << endl;
-				recvLoop = false;
-				connectionLoop = false;
-			}
-			else if (fileBuffer == BYE)
-			{
-				cout << "Client has disconnected..." << endl;
-				recvLoop = false;
-			}
-			else if (fileBuffer == ESCCHAR)
-			{
-				cout << "End of File..." << endl;
-			}
-			else
-			{
-				cout << "Msg Rx: " << fileBuffer << endl;
-
-				ofstream file;
-				file.open(FILENAME, ofstream::app);
-
-				if (!file.is_open())
-				{
-					cout << "Error opening file." << endl;
-					return 0;
-				}
-
-				file << fileBuffer;
-				file.close();
-			}
+			TxBuffer = &BYE;
+			continueLoop = false;
 		}
+		else
+		{
+			ifstream file;
+			file.open(InputBuffer, ios::binary);
+
+			if (!file.is_open())
+			{
+				cout << "Error opening file." << endl;
+				return 0;
+			}
+
+			while (!file.eof())
+			{
+				file.get(fileBuffer);
+				TxBuffer = &fileBuffer;
+
+				send(ClientSocket, TxBuffer, sizeof(TxBuffer), 0);
+				recv(ClientSocket, RxBuffer, sizeof(RxBuffer), 0);
+				cout << RxBuffer << endl;
+
+				file.peek();
+			}
+
+			file.close();
+			TxBuffer = &ESCCHAR;
+		}
+		send(ClientSocket, TxBuffer, sizeof(TxBuffer), 0);
+		recv(ClientSocket, RxBuffer, sizeof(RxBuffer), 0);
+		cout << RxBuffer << endl;
 	}
 
-	closesocket(ConnectionSocket);	//Close incoming socket
-	closesocket(ServerSocket);	    //Close server socket	
-	WSACleanup();					//Free Winsock resources
+	closesocket(ClientSocket);	//Close connection and socket
+	WSACleanup();				//Free Winsock DLL resources
 
 	return 1;
 }
